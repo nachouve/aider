@@ -528,15 +528,15 @@ class TestCommands(TestCase):
             file_path = Path(repo_dir) / filename
             file_path.write_text("first content")
             repo.git.add(filename)
-            repo.git.commit("-m", "aider: first commit")
+            repo.git.commit("-m", "first commit")
 
             file_path.write_text("second content")
             repo.git.add(filename)
-            repo.git.commit("-m", "aider: second commit")
+            repo.git.commit("-m", "second commit")
 
             # Store the commit hash
             last_commit_hash = repo.head.commit.hexsha[:7]
-            coder.last_aider_commit_hash = last_commit_hash
+            coder.aider_commit_hashes.add(last_commit_hash)
 
             file_path.write_text("dirty content")
 

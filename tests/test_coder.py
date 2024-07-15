@@ -1,16 +1,15 @@
 import tempfile
 import unittest
 from pathlib import Path
-from unittest.mock import MagicMock, patch
+from unittest.mock import MagicMock
 
 import git
-import openai
 
 from aider.coders import Coder
 from aider.dump import dump  # noqa: F401
 from aider.io import InputOutput
 from aider.models import Model
-from aider.utils import ChdirTemporaryDirectory, GitTemporaryDirectory
+from aider.utils import GitTemporaryDirectory
 
 
 class TestCoder(unittest.TestCase):
@@ -220,7 +219,7 @@ class TestCoder(unittest.TestCase):
         files = [file1, file2]
 
         # Initialize the Coder object with the mocked IO and mocked repo
-        coder = Coder.create(self.GPT35, None, io=InputOutput(), fnames=files)
+        coder = Coder.create(self.GPT35, None, io=InputOutput(), fnames=files, pretty=False)
 
         def mock_send(*args, **kwargs):
             coder.partial_response_content = "ok"
@@ -247,7 +246,7 @@ class TestCoder(unittest.TestCase):
         files = [file1, file2]
 
         # Initialize the Coder object with the mocked IO and mocked repo
-        coder = Coder.create(self.GPT35, None, io=InputOutput(), fnames=files)
+        coder = Coder.create(self.GPT35, None, io=InputOutput(), fnames=files, pretty=False)
 
         def mock_send(*args, **kwargs):
             coder.partial_response_content = "ok"
@@ -330,25 +329,6 @@ class TestCoder(unittest.TestCase):
         # both files should still be here
         self.assertEqual(len(coder.abs_fnames), 2)
 
-    def test_run_with_invalid_request_error(self):
-        with ChdirTemporaryDirectory():
-            # Mock the IO object
-            mock_io = MagicMock()
-
-            # Initialize the Coder object with the mocked IO and mocked repo
-            coder = Coder.create(self.GPT35, None, mock_io)
-
-            # Call the run method and assert that InvalidRequestError is raised
-            with self.assertRaises(openai.BadRequestError):
-                with patch("litellm.completion") as Mock:
-                    Mock.side_effect = openai.BadRequestError(
-                        message="Invalid request",
-                        response=MagicMock(),
-                        body=None,
-                    )
-
-                    coder.run(with_message="hi")
-
     def test_new_file_edit_one_commit(self):
         """A new file shouldn't get pre-committed before the GPT edit commit"""
         with GitTemporaryDirectory():
@@ -357,7 +337,7 @@ class TestCoder(unittest.TestCase):
             fname = Path("file.txt")
 
             io = InputOutput(yes=True)
-            coder = Coder.create(self.GPT35, "diff", io=io, fnames=[str(fname)])
+            coder = Coder.create(self.GPT35, "diff", io=io, fnames=[str(fname)], pretty=False)
 
             self.assertTrue(fname.exists())
 
@@ -414,7 +394,9 @@ new
             fname1.write_text("ONE\n")
 
             io = InputOutput(yes=True)
-            coder = Coder.create(self.GPT35, "diff", io=io, fnames=[str(fname1), str(fname2)])
+            coder = Coder.create(
+                self.GPT35, "diff", io=io, fnames=[str(fname1), str(fname2)], pretty=False
+            )
 
             def mock_send(*args, **kwargs):
                 coder.partial_response_content = f"""
@@ -467,7 +449,7 @@ TWO
             fname2.write_text("OTHER\n")
 
             io = InputOutput(yes=True)
-            coder = Coder.create(self.GPT35, "diff", io=io, fnames=[str(fname)])
+            coder = Coder.create(self.GPT35, "diff", io=io, fnames=[str(fname)], pretty=False)
 
             def mock_send(*args, **kwargs):
                 coder.partial_response_content = f"""
@@ -545,7 +527,7 @@ three
             repo.git.commit("-m", "initial")
 
             io = InputOutput(yes=True)
-            coder = Coder.create(self.GPT35, "diff", io=io, fnames=[str(fname)])
+            coder = Coder.create(self.GPT35, "diff", io=io, fnames=[str(fname)], pretty=False)
 
             def mock_send(*args, **kwargs):
                 coder.partial_response_content = f"""
@@ -606,6 +588,68 @@ two
             self.assertNotIn(fname1, str(coder.abs_fnames))
             self.assertNotIn(fname2, str(coder.abs_fnames))
             self.assertNotIn(fname3, str(coder.abs_fnames))
+
+    def test_check_for_urls(self):
+        io = InputOutput(yes=True)
+        coder = Coder.create(self.GPT35, None, io=io, pretty=False)
+        coder.commands.scraper = MagicMock()
+        coder.commands.scraper.scrape = MagicMock(return_value="some content")
+
+        # Test various URL formats
+        test_cases = [
+            ("Check http://example.com, it's cool", "http://example.com"),
+            ("Visit https://www.example.com/page and see stuff", "https://www.example.com/page"),
+            (
+                "Go to http://subdomain.example.com:8080/path?query=value, or not",
+                "http://subdomain.example.com:8080/path?query=value",
+            ),
+            (
+                "See https://example.com/path#fragment for example",
+                "https://example.com/path#fragment",
+            ),
+            ("Look at http://localhost:3000", "http://localhost:3000"),
+            ("View https://example.com/setup#whatever", "https://example.com/setup#whatever"),
+            ("Open http://127.0.0.1:8000/api/v1/", "http://127.0.0.1:8000/api/v1/"),
+            (
+                "Try https://example.com/path/to/page.html?param1=value1&param2=value2",
+                "https://example.com/path/to/page.html?param1=value1&param2=value2",
+            ),
+            ("Access http://user:password@example.com", "http://user:password@example.com"),
+            (
+                "Use https://example.com/path_(with_parentheses)",
+                "https://example.com/path_(with_parentheses)",
+            ),
+        ]
+
+        for input_text, expected_url in test_cases:
+            with self.subTest(input_text=input_text):
+                result = coder.check_for_urls(input_text)
+                self.assertIn(expected_url, result)
+
+        # Test cases from the GitHub issue
+        issue_cases = [
+            ("check http://localhost:3002, there is an error", "http://localhost:3002"),
+            (
+                "can you check out https://example.com/setup#whatever?",
+                "https://example.com/setup#whatever",
+            ),
+        ]
+
+        for input_text, expected_url in issue_cases:
+            with self.subTest(input_text=input_text):
+                result = coder.check_for_urls(input_text)
+                self.assertIn(expected_url, result)
+
+        # Test case with multiple URLs
+        multi_url_input = "Check http://example1.com and https://example2.com/page"
+        result = coder.check_for_urls(multi_url_input)
+        self.assertIn("http://example1.com", result)
+        self.assertIn("https://example2.com/page", result)
+
+        # Test case with no URL
+        no_url_input = "This text contains no URL"
+        result = coder.check_for_urls(no_url_input)
+        self.assertEqual(result, no_url_input)
 
 
 if __name__ == "__main__":

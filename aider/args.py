@@ -1,9 +1,23 @@
+#!/usr/bin/env python
+
 import argparse
 import os
+import sys
 
 import configargparse
 
-from aider import __version__, models
+from aider import __version__
+from aider.args_formatter import (
+    DotEnvFormatter,
+    MarkdownHelpFormatter,
+    YamlHelpFormatter,
+)
+
+from .dump import dump  # noqa: F401
+
+
+def default_env_file(git_root):
+    return os.path.join(git_root, ".env") if git_root else ".env"
 
 
 def get_parser(default_config_files, git_root):
@@ -11,17 +25,11 @@ def get_parser(default_config_files, git_root):
         description="aider is GPT powered coding in your terminal",
         add_config_file_help=True,
         default_config_files=default_config_files,
-        config_file_parser_class=configargparse.YAMLConfigFileParser,
         auto_env_var_prefix="AIDER_",
     )
-
-    ##########
     group = parser.add_argument_group("Main")
     group.add_argument(
-        "files",
-        metavar="FILE",
-        nargs="*",
-        help="files to edit with an LLM (optional)",
+        "files", metavar="FILE", nargs="*", help="files to edit with an LLM (optional)"
     )
     group.add_argument(
         "--openai-api-key",
@@ -33,14 +41,13 @@ def get_parser(default_config_files, git_root):
         "--anthropic-api-key",
         metavar="ANTHROPIC_API_KEY",
         env_var="ANTHROPIC_API_KEY",
-        help="Specify the OpenAI API key",
+        help="Specify the Anthropic API key",
     )
-    default_model = models.DEFAULT_MODEL_NAME
     group.add_argument(
         "--model",
         metavar="MODEL",
-        default=default_model,
-        help=f"Specify the model to use for the main chat (default: {default_model})",
+        default=None,
+        help="Specify the model to use for the main chat",
     )
     opus_model = "claude-3-opus-20240229"
     group.add_argument(
@@ -50,7 +57,7 @@ def get_parser(default_config_files, git_root):
         const=opus_model,
         help=f"Use {opus_model} model for the main chat",
     )
-    sonnet_model = "claude-3-sonnet-20240229"
+    sonnet_model = "claude-3-5-sonnet-20240620"
     group.add_argument(
         "--sonnet",
         action="store_const",
@@ -67,9 +74,17 @@ def get_parser(default_config_files, git_root):
         const=gpt_4_model,
         help=f"Use {gpt_4_model} model for the main chat",
     )
-    gpt_4_turbo_model = "gpt-4-turbo"
+    gpt_4o_model = "gpt-4o"
     group.add_argument(
-        "--4-turbo-vision",
+        "--4o",
+        action="store_const",
+        dest="model",
+        const=gpt_4o_model,
+        help=f"Use {gpt_4o_model} model for the main chat",
+    )
+    gpt_4_turbo_model = "gpt-4-1106-preview"
+    group.add_argument(
+        "--4-turbo",
         action="store_const",
         dest="model",
         const=gpt_4_turbo_model,
@@ -125,6 +140,24 @@ def get_parser(default_config_files, git_root):
         help="Specify the OpenAI organization ID",
     )
     group.add_argument(
+        "--model-settings-file",
+        metavar="MODEL_SETTINGS_FILE",
+        default=".aider.model.settings.yml",
+        help="Specify a file with aider model settings for unknown models",
+    )
+    group.add_argument(
+        "--model-metadata-file",
+        metavar="MODEL_METADATA_FILE",
+        default=".aider.model.metadata.json",
+        help="Specify a file with context window and costs for unknown models",
+    )
+    group.add_argument(
+        "--verify-ssl",
+        action=argparse.BooleanOptionalAction,
+        default=True,
+        help="Verify the SSL cert when connecting to models (default: True)",
+    )
+    group.add_argument(
         "--edit-format",
         metavar="EDIT_FORMAT",
         default=None,
@@ -151,11 +184,21 @@ def get_parser(default_config_files, git_root):
         default=1024,
         help="Max number of tokens to use for repo map, use 0 to disable (default: 1024)",
     )
-    default_env_file = os.path.join(git_root, ".env") if git_root else ".env"
+    group.add_argument(
+        "--max-chat-history-tokens",
+        type=int,
+        default=None,
+        help=(
+            "Maximum number of tokens to use for chat history. If not specified, uses the model's"
+            " max_chat_history_tokens."
+        ),
+    )
+    # This is a duplicate of the argument in the preparser and is a no-op by this time of
+    # argument parsing, but it's here so that the help is displayed as expected.
     group.add_argument(
         "--env-file",
         metavar="ENV_FILE",
-        default=default_env_file,
+        default=default_env_file(git_root),
         help="Specify the .env file to load (default: .env in git root)",
     )
 
@@ -178,6 +221,18 @@ def get_parser(default_config_files, git_root):
         metavar="CHAT_HISTORY_FILE",
         default=default_chat_history_file,
         help=f"Specify the chat history file (default: {default_chat_history_file})",
+    )
+    group.add_argument(
+        "--restore-chat-history",
+        action=argparse.BooleanOptionalAction,
+        default=False,
+        help="Restore the previous chat history messages (default: False)",
+    )
+    group.add_argument(
+        "--llm-history-file",
+        metavar="LLM_HISTORY_FILE",
+        default=None,
+        help="Log the conversation with the LLM to this file (for example, .aider.llm.history)",
     )
 
     ##########
@@ -277,20 +332,83 @@ def get_parser(default_config_files, git_root):
         help="Enable/disable commits when repo is found dirty (default: True)",
     )
     group.add_argument(
+        "--attribute-author",
+        action=argparse.BooleanOptionalAction,
+        default=True,
+        help="Attribute aider code changes in the git author name (default: True)",
+    )
+    group.add_argument(
+        "--attribute-committer",
+        action=argparse.BooleanOptionalAction,
+        default=True,
+        help="Attribute aider commits in the git committer name (default: True)",
+    )
+    group.add_argument(
+        "--attribute-commit-message",
+        action=argparse.BooleanOptionalAction,
+        default=False,
+        help="Prefix commit messages with 'aider: ' (default: False)",
+    )
+    group.add_argument(
         "--dry-run",
         action=argparse.BooleanOptionalAction,
         default=False,
         help="Perform a dry run without modifying files (default: False)",
     )
+    group = parser.add_argument_group("Fixing and committing")
     group.add_argument(
         "--commit",
         action="store_true",
         help="Commit all pending changes with a suitable commit message, then exit",
         default=False,
     )
+    group.add_argument(
+        "--lint",
+        action="store_true",
+        help="Lint and fix provided files, or dirty files if none provided",
+        default=False,
+    )
+    group.add_argument(
+        "--lint-cmd",
+        action="append",
+        help=(
+            'Specify lint commands to run for different languages, eg: "python: flake8'
+            ' --select=..." (can be used multiple times)'
+        ),
+        default=[],
+    )
+    group.add_argument(
+        "--auto-lint",
+        action=argparse.BooleanOptionalAction,
+        default=True,
+        help="Enable/disable automatic linting after changes (default: True)",
+    )
+    group.add_argument(
+        "--test-cmd",
+        help="Specify command to run tests",
+        default=[],
+    )
+    group.add_argument(
+        "--auto-test",
+        action=argparse.BooleanOptionalAction,
+        default=False,
+        help="Enable/disable automatic testing after changes (default: False)",
+    )
+    group.add_argument(
+        "--test",
+        action="store_true",
+        help="Run tests and fix problems found",
+        default=False,
+    )
 
     ##########
     group = parser.add_argument_group("Other Settings")
+    group.add_argument(
+        "--vim",
+        action="store_true",
+        help="Use VI editing mode in the terminal (default: False)",
+        default=False,
+    )
     group.add_argument(
         "--voice-language",
         metavar="VOICE_LANGUAGE",
@@ -304,15 +422,16 @@ def get_parser(default_config_files, git_root):
         help="Show the version number and exit",
     )
     group.add_argument(
-        "--check-update",
+        "--just-check-update",
         action="store_true",
         help="Check for updates and return status in the exit code",
         default=False,
     )
     group.add_argument(
-        "--skip-check-update",
-        action="store_true",
-        help="Skips checking for the update when the program runs",
+        "--check-update",
+        action=argparse.BooleanOptionalAction,
+        help="Check for new aider versions on launch",
+        default=True,
     )
     group.add_argument(
         "--apply",
@@ -342,6 +461,12 @@ def get_parser(default_config_files, git_root):
         "--show-prompts",
         action="store_true",
         help="Print the system prompts and exit (debug)",
+        default=False,
+    )
+    group.add_argument(
+        "--exit",
+        action="store_true",
+        help="Do all startup activities then exit before accepting user input (debug)",
         default=False,
     )
     group.add_argument(
@@ -386,3 +511,61 @@ def get_parser(default_config_files, git_root):
     )
 
     return parser
+
+
+def get_md_help():
+    os.environ["COLUMNS"] = "70"
+    sys.argv = ["aider"]
+    parser = get_parser([], None)
+
+    # This instantiates all the action.env_var values
+    parser.parse_known_args()
+
+    parser.formatter_class = MarkdownHelpFormatter
+
+    return argparse.ArgumentParser.format_help(parser)
+    return parser.format_help()
+
+
+def get_sample_yaml():
+    os.environ["COLUMNS"] = "100"
+    sys.argv = ["aider"]
+    parser = get_parser([], None)
+
+    # This instantiates all the action.env_var values
+    parser.parse_known_args()
+
+    parser.formatter_class = YamlHelpFormatter
+
+    return argparse.ArgumentParser.format_help(parser)
+    return parser.format_help()
+
+
+def get_sample_dotenv():
+    os.environ["COLUMNS"] = "120"
+    sys.argv = ["aider"]
+    parser = get_parser([], None)
+
+    # This instantiates all the action.env_var values
+    parser.parse_known_args()
+
+    parser.formatter_class = DotEnvFormatter
+
+    return argparse.ArgumentParser.format_help(parser)
+    return parser.format_help()
+
+
+def main():
+    arg = sys.argv[1] if len(sys.argv[1:]) else None
+
+    if arg == "md":
+        print(get_md_help())
+    elif arg == "dotenv":
+        print(get_sample_dotenv())
+    else:
+        print(get_sample_yaml())
+
+
+if __name__ == "__main__":
+    status = main()
+    sys.exit(status)

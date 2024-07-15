@@ -297,7 +297,7 @@ These changes replace the `subprocess.run` patches with `subprocess.check_output
         files = [file1]
 
         # Initialize the Coder object with the mocked IO and mocked repo
-        coder = Coder.create(self.GPT35, "diff", io=InputOutput(), fnames=files)
+        coder = Coder.create(self.GPT35, "diff", io=InputOutput(), fnames=files, pretty=False)
 
         def mock_send(*args, **kwargs):
             coder.partial_response_content = f"""
@@ -340,6 +340,7 @@ new
             io=InputOutput(dry_run=True),
             fnames=files,
             dry_run=True,
+            pretty=False,
         )
 
         def mock_send(*args, **kwargs):
@@ -395,6 +396,32 @@ Hope you like it!
             [
                 ("foo.txt", "one\n", "two\n"),
                 ("foo.txt", "three\n", "four\n"),
+            ],
+        )
+
+    def test_deepseek_coder_v2_filename_mangling(self):
+        edit = """
+Here's the change:
+
+ ```python
+foo.txt
+```
+```python
+<<<<<<< SEARCH
+one
+=======
+two
+>>>>>>> REPLACE
+```
+
+Hope you like it!
+"""
+
+        edits = list(eb.find_original_update_blocks(edit))
+        self.assertEqual(
+            edits,
+            [
+                ("foo.txt", "one\n", "two\n"),
             ],
         )
 

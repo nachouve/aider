@@ -1,7 +1,11 @@
+import difflib
 import math
 import re
+import sys
 from difflib import SequenceMatcher
 from pathlib import Path
+
+from aider import utils
 
 from ..dump import dump  # noqa: F401
 from .base_coder import Coder
@@ -24,24 +28,73 @@ class EditBlockCoder(Coder):
         return edits
 
     def apply_edits(self, edits):
-        for path, original, updated in edits:
+        failed = []
+        passed = []
+        for edit in edits:
+            path, original, updated = edit
             full_path = self.abs_root_path(path)
             content = self.io.read_text(full_path)
-            content = do_replace(full_path, content, original, updated, self.fence)
-            if content:
-                self.io.write_text(full_path, content)
-                continue
-            raise ValueError(f"""InvalidEditBlock: edit failed!
+            new_content = do_replace(full_path, content, original, updated, self.fence)
+            if not new_content:
+                # try patching any of the other files in the chat
+                for full_path in self.abs_fnames:
+                    content = self.io.read_text(full_path)
+                    new_content = do_replace(full_path, content, original, updated, self.fence)
+                    if new_content:
+                        break
 
-{path} does not contain the *exact chunk* of SEARCH lines you specified.
-Try again.
-DO NOT skip blank lines, comments, docstrings, etc!
-The SEARCH block needs to be EXACTLY the same as the lines in {path} with nothing missing!
+            if new_content:
+                self.io.write_text(full_path, new_content)
+                passed.append(edit)
+            else:
+                failed.append(edit)
 
-{path} does not contain these {len(original.splitlines())} exact lines in a row:
-```
-{original}```
-""")
+        if not failed:
+            return
+
+        blocks = "block" if len(failed) == 1 else "blocks"
+
+        res = f"# {len(failed)} SEARCH/REPLACE {blocks} failed to match!\n"
+        for edit in failed:
+            path, original, updated = edit
+
+            full_path = self.abs_root_path(path)
+            content = self.io.read_text(full_path)
+
+            res += f"""
+## SearchReplaceNoExactMatch: This SEARCH block failed to exactly match lines in {path}
+<<<<<<< SEARCH
+{original}=======
+{updated}>>>>>>> REPLACE
+
+"""
+            did_you_mean = find_similar_lines(original, content)
+            if did_you_mean:
+                res += f"""Did you mean to match some of these actual lines from {path}?
+
+{self.fence[0]}
+{did_you_mean}
+{self.fence[1]}
+
+"""
+
+            if updated in content and updated:
+                res += f"""Are you sure you need this SEARCH/REPLACE block?
+The REPLACE lines are already in {path}!
+
+"""
+        res += (
+            "The SEARCH section must exactly match an existing block of lines including all white"
+            " space, comments, indentation, docstrings, etc\n"
+        )
+        if passed:
+            pblocks = "block" if len(passed) == 1 else "blocks"
+            res += f"""
+# The other {len(passed)} SEARCH/REPLACE {pblocks} were applied successfully.
+Don't re-send them.
+Just reply with fixed versions of the {blocks} above that failed to match.
+"""
+        raise ValueError(res)
 
 
 def prep(content):
@@ -365,16 +418,8 @@ def find_original_update_blocks(content, fence=DEFAULT_FENCE):
 
             processed.append(cur)  # original_marker
 
-            filename = strip_filename(processed[-2].splitlines()[-1], fence)
-            try:
-                if not filename:
-                    filename = strip_filename(processed[-2].splitlines()[-2], fence)
-                if not filename:
-                    if current_filename:
-                        filename = current_filename
-                    else:
-                        raise ValueError(missing_filename_err.format(fence=fence))
-            except IndexError:
+            filename = find_filename(processed[-2].splitlines(), fence)
+            if not filename:
                 if current_filename:
                     filename = current_filename
                 else:
@@ -411,19 +456,88 @@ def find_original_update_blocks(content, fence=DEFAULT_FENCE):
         raise ValueError(f"{processed}\n^^^ Error parsing SEARCH/REPLACE block.")
 
 
+def find_filename(lines, fence):
+    """
+    Deepseek Coder v2 has been doing this:
+
+
+     ```python
+    word_count.py
+    ```
+    ```python
+    <<<<<<< SEARCH
+    ...
+
+    This is a more flexible search back for filenames.
+    """
+    # Go back through the 3 preceding lines
+    lines.reverse()
+    lines = lines[:3]
+
+    for line in lines:
+        # If we find a filename, done
+        filename = strip_filename(line, fence)
+        if filename:
+            return filename
+
+        # Only continue as long as we keep seeing fences
+        if not line.startswith(fence[0]):
+            return
+
+
+def find_similar_lines(search_lines, content_lines, threshold=0.6):
+    search_lines = search_lines.splitlines()
+    content_lines = content_lines.splitlines()
+
+    best_ratio = 0
+    best_match = None
+
+    for i in range(len(content_lines) - len(search_lines) + 1):
+        chunk = content_lines[i : i + len(search_lines)]
+        ratio = SequenceMatcher(None, search_lines, chunk).ratio()
+        if ratio > best_ratio:
+            best_ratio = ratio
+            best_match = chunk
+            best_match_i = i
+
+    if best_ratio < threshold:
+        return ""
+
+    if best_match[0] == search_lines[0] and best_match[-1] == search_lines[-1]:
+        return "\n".join(best_match)
+
+    N = 5
+    best_match_end = min(len(content_lines), best_match_i + len(search_lines) + N)
+    best_match_i = max(0, best_match_i - N)
+
+    best = content_lines[best_match_i:best_match_end]
+    return "\n".join(best)
+
+
+def main():
+    history_md = Path(sys.argv[1]).read_text()
+    if not history_md:
+        return
+
+    messages = utils.split_chat_history_markdown(history_md)
+
+    for msg in messages:
+        msg = msg["content"]
+        edits = list(find_original_update_blocks(msg))
+
+        for fname, before, after in edits:
+            # Compute diff
+            diff = difflib.unified_diff(
+                before.splitlines(keepends=True),
+                after.splitlines(keepends=True),
+                fromfile="before",
+                tofile="after",
+            )
+            diff = "".join(diff)
+            dump(before)
+            dump(after)
+            dump(diff)
+
+
 if __name__ == "__main__":
-    edit = """
-Here's the change:
-
-```text
-foo.txt
-<<<<<<< HEAD
-Two
-=======
-Tooooo
->>>>>>> updated
-```
-
-Hope you like it!
-"""
-    print(list(find_original_update_blocks(edit)))
+    main()

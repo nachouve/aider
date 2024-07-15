@@ -1,5 +1,9 @@
+import itertools
 import os
+import subprocess
+import sys
 import tempfile
+import time
 from pathlib import Path
 
 import git
@@ -17,10 +21,16 @@ class IgnorantTemporaryDirectory:
         return self.temp_dir.__enter__()
 
     def __exit__(self, exc_type, exc_val, exc_tb):
+        self.cleanup()
+
+    def cleanup(self):
         try:
-            self.temp_dir.__exit__(exc_type, exc_val, exc_tb)
+            self.temp_dir.cleanup()
         except (OSError, PermissionError):
             pass  # Ignore errors (Windows)
+
+    def __getattr__(self, item):
+        return getattr(self.temp_dir, item)
 
 
 class ChdirTemporaryDirectory(IgnorantTemporaryDirectory):
@@ -84,24 +94,179 @@ def safe_abs_path(res):
     return str(res)
 
 
-def show_messages(messages, title=None, functions=None):
+def format_content(role, content):
+    formatted_lines = []
+    for line in content.splitlines():
+        formatted_lines.append(f"{role} {line}")
+    return "\n".join(formatted_lines)
+
+
+def format_messages(messages, title=None):
+    output = []
     if title:
-        print(title.upper(), "*" * 50)
+        output.append(f"{title.upper()} {'*' * 50}")
 
     for msg in messages:
-        print()
+        output.append("")
         role = msg["role"].upper()
         content = msg.get("content")
         if isinstance(content, list):  # Handle list content (e.g., image messages)
             for item in content:
                 if isinstance(item, dict) and "image_url" in item:
-                    print(role, "Image URL:", item["image_url"]["url"])
+                    output.append(f"{role} Image URL: {item['image_url']['url']}")
         elif isinstance(content, str):  # Handle string content
-            for line in content.splitlines():
-                print(role, line)
+            output.append(format_content(role, content))
         content = msg.get("function_call")
         if content:
-            print(role, content)
+            output.append(f"{role} {content}")
+
+    return "\n".join(output)
+
+
+def show_messages(messages, title=None, functions=None):
+    formatted_output = format_messages(messages, title)
+    print(formatted_output)
 
     if functions:
         dump(functions)
+
+
+def split_chat_history_markdown(text, include_tool=False):
+    messages = []
+    user = []
+    assistant = []
+    tool = []
+    lines = text.splitlines(keepends=True)
+
+    def append_msg(role, lines):
+        lines = "".join(lines)
+        if lines.strip():
+            messages.append(dict(role=role, content=lines))
+
+    for line in lines:
+        if line.startswith("# "):
+            continue
+        if line.startswith("> "):
+            append_msg("assistant", assistant)
+            assistant = []
+            append_msg("user", user)
+            user = []
+            tool.append(line[2:])
+            continue
+        # if line.startswith("#### /"):
+        #    continue
+
+        if line.startswith("#### "):
+            append_msg("assistant", assistant)
+            assistant = []
+            append_msg("tool", tool)
+            tool = []
+
+            content = line[5:]
+            user.append(content)
+            continue
+
+        append_msg("user", user)
+        user = []
+        append_msg("tool", tool)
+        tool = []
+
+        assistant.append(line)
+
+    append_msg("assistant", assistant)
+    append_msg("user", user)
+
+    if not include_tool:
+        messages = [m for m in messages if m["role"] != "tool"]
+
+    return messages
+
+
+def get_pip_install(args):
+    cmd = [
+        sys.executable,
+        "-m",
+        "pip",
+        "install",
+    ]
+    cmd += args
+    return cmd
+
+
+def run_install(cmd):
+    print()
+    print("Installing: ", " ".join(cmd))
+
+    try:
+        output = []
+        process = subprocess.Popen(
+            cmd,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.STDOUT,
+            text=True,
+            bufsize=1,
+            universal_newlines=True,
+        )
+        spinner = itertools.cycle(["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"])
+        last_update = time.time()
+        update_interval = 0.2  # 5 times per second
+
+        while True:
+            char = process.stdout.read(1)
+            if not char:
+                break
+
+            output.append(char)
+
+            current_time = time.time()
+            if current_time - last_update >= update_interval:
+                print(f" Installing... {next(spinner)}", end="\r", flush=True)
+                last_update = current_time
+
+        return_code = process.wait()
+        output = "".join(output)
+
+        dump(output)
+
+        if return_code == 0:
+            print("\rInstallation complete.")
+            print()
+            return True, output
+
+    except subprocess.CalledProcessError as e:
+        print(f"\nError running pip install: {e}")
+
+    print("\nInstallation failed.\n")
+
+    return False, output
+
+
+def check_pip_install_extra(io, module, prompt, pip_install_cmd):
+    try:
+        __import__(module)
+        return True
+    except (ImportError, ModuleNotFoundError):
+        pass
+
+    cmd = get_pip_install(pip_install_cmd)
+
+    text = f"{prompt}:\n\n{' '.join(cmd)}\n"
+    io.tool_error(text)
+
+    if not io.confirm_ask("Run pip install?", default="y"):
+        return
+
+    success, output = run_install(cmd)
+    if not success:
+        return
+
+    try:
+        __import__(module)
+        return True
+    except (ImportError, ModuleNotFoundError):
+        pass
+
+    io.tool_error(output)
+
+    print()
+    print(f"Failed to install {pip_install_cmd[0]}")

@@ -6,6 +6,7 @@ import sys
 
 import streamlit as st
 
+from aider import urls
 from aider.coders import Coder
 from aider.dump import dump  # noqa: F401
 from aider.io import InputOutput
@@ -16,11 +17,14 @@ from aider.scrape import Scraper
 class CaptureIO(InputOutput):
     lines = []
 
-    def tool_output(self, msg):
-        self.lines.append(msg)
+    def tool_output(self, msg, log_only=False):
+        if not log_only:
+            self.lines.append(msg)
+        super().tool_output(msg, log_only=log_only)
 
     def tool_error(self, msg):
         self.lines.append(msg)
+        super().tool_error(msg)
 
     def get_captured_lines(self):
         lines = self.lines
@@ -75,6 +79,9 @@ def get_coder():
     # coder.io = io # this breaks the input_history
     coder.commands.io = io
 
+    for line in coder.get_announcements():
+        coder.io.tool_output(line)
+
     return coder
 
 
@@ -104,9 +111,6 @@ class GUI:
         show_undo = False
         res = ""
         if commit_hash:
-            prefix = "aider: "
-            if commit_message.startswith(prefix):
-                commit_message = commit_message[len(prefix) :]
             res += f"Commit `{commit_hash}`: {commit_message}  \n"
             if commit_hash == self.coder.last_aider_commit_hash:
                 show_undo = True
@@ -159,12 +163,12 @@ class GUI:
         pass
 
     def do_recommended_actions(self):
+        text = "Aider works best when your code is stored in a git repo.  \n"
+        text += f"[See the FAQ for more info]({urls.git})"
+
         with st.expander("Recommended actions", expanded=True):
             with st.popover("Create a git repo to track changes"):
-                st.write(
-                    "Aider works best when your code is stored in a git repo.  \n[See the FAQ"
-                    " for more info](https://aider.chat/docs/faq.html#how-does-aider-use-git)"
-                )
+                st.write(text)
                 self.button("Create git repo", key=random.random(), help="?")
 
             with st.popover("Update your `.gitignore` file"):
@@ -405,14 +409,22 @@ class GUI:
         prompt = self.state.prompt
         self.state.prompt = None
 
+        # This duplicates logic from within Coder
+        self.num_reflections = 0
+        self.max_reflections = 3
+
         while prompt:
             with self.messages.chat_message("assistant"):
                 res = st.write_stream(self.coder.run_stream(prompt))
                 self.state.messages.append({"role": "assistant", "content": res})
                 # self.cost()
+
+            prompt = None
             if self.coder.reflected_message:
-                self.info(self.coder.reflected_message)
-            prompt = self.coder.reflected_message
+                if self.num_reflections < self.max_reflections:
+                    self.num_reflections += 1
+                    self.info(self.coder.reflected_message)
+                    prompt = self.coder.reflected_message
 
         with self.messages:
             edit = dict(
@@ -470,10 +482,6 @@ class GUI:
         if not self.state.scraper:
             self.scraper = Scraper(print_error=self.info)
 
-        instructions = self.scraper.get_playwright_instructions()
-        if instructions:
-            self.info(instructions)
-
         content = self.scraper.scrape(url) or ""
         if content.strip():
             content = f"{url}\n\n" + content
@@ -513,9 +521,9 @@ def gui_main():
     st.set_page_config(
         layout="wide",
         page_title="Aider",
-        page_icon="https://aider.chat/assets/favicon-32x32.png",
+        page_icon=urls.favicon,
         menu_items={
-            "Get Help": "https://aider.chat/docs/faq.html",
+            "Get Help": urls.website,
             "Report a bug": "https://github.com/paul-gauthier/aider/issues",
             "About": "# Aider\nAI pair programming in your browser.",
         },

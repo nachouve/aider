@@ -16,9 +16,23 @@ class GitRepo:
     aider_ignore_spec = None
     aider_ignore_ts = 0
 
-    def __init__(self, io, fnames, git_dname, aider_ignore_file=None, models=None):
+    def __init__(
+        self,
+        io,
+        fnames,
+        git_dname,
+        aider_ignore_file=None,
+        models=None,
+        attribute_author=True,
+        attribute_committer=True,
+        attribute_commit_message=False,
+    ):
         self.io = io
         self.models = models
+
+        self.attribute_author = attribute_author
+        self.attribute_committer = attribute_committer
+        self.attribute_commit_message = attribute_commit_message
 
         if git_dname:
             check_fnames = [git_dname]
@@ -59,7 +73,7 @@ class GitRepo:
         if aider_ignore_file:
             self.aider_ignore_file = Path(aider_ignore_file)
 
-    def commit(self, fnames=None, context=None, prefix=None, message=None):
+    def commit(self, fnames=None, context=None, message=None, aider_edits=False):
         if not fnames and not self.repo.is_dirty():
             return
 
@@ -72,15 +86,15 @@ class GitRepo:
         else:
             commit_message = self.get_commit_message(diffs, context)
 
+        if aider_edits and self.attribute_commit_message:
+            commit_message = "aider: " + commit_message
+
         if not commit_message:
             commit_message = "(no commit message provided)"
 
-        if prefix:
-            commit_message = prefix + commit_message
-
         full_commit_message = commit_message
-        if context:
-            full_commit_message += "\n\n# Aider chat conversation:\n\n" + context
+        # if context:
+        #    full_commit_message += "\n\n# Aider chat conversation:\n\n" + context
 
         cmd = ["-m", full_commit_message, "--no-verify"]
         if fnames:
@@ -91,9 +105,34 @@ class GitRepo:
         else:
             cmd += ["-a"]
 
+        original_user_name = self.repo.config_reader().get_value("user", "name")
+        original_committer_name_env = os.environ.get("GIT_COMMITTER_NAME")
+        committer_name = f"{original_user_name} (aider)"
+
+        if self.attribute_committer:
+            os.environ["GIT_COMMITTER_NAME"] = committer_name
+
+        if aider_edits and self.attribute_author:
+            original_auther_name_env = os.environ.get("GIT_AUTHOR_NAME")
+            os.environ["GIT_AUTHOR_NAME"] = committer_name
+
         self.repo.git.commit(cmd)
         commit_hash = self.repo.head.commit.hexsha[:7]
         self.io.tool_output(f"Commit {commit_hash} {commit_message}")
+
+        # Restore the env
+
+        if self.attribute_committer:
+            if original_committer_name_env is not None:
+                os.environ["GIT_COMMITTER_NAME"] = original_committer_name_env
+            else:
+                del os.environ["GIT_COMMITTER_NAME"]
+
+        if aider_edits and self.attribute_author:
+            if original_auther_name_env is not None:
+                os.environ["GIT_AUTHOR_NAME"] = original_auther_name_env
+            else:
+                del os.environ["GIT_AUTHOR_NAME"]
 
         return commit_hash, commit_message
 
@@ -241,6 +280,23 @@ class GitRepo:
     def abs_root_path(self, path):
         res = Path(self.root) / path
         return utils.safe_abs_path(res)
+
+    def get_dirty_files(self):
+        """
+        Returns a list of all files which are dirty (not committed), either staged or in the working
+        directory.
+        """
+        dirty_files = set()
+
+        # Get staged files
+        staged_files = self.repo.git.diff("--name-only", "--cached").splitlines()
+        dirty_files.update(staged_files)
+
+        # Get unstaged files
+        unstaged_files = self.repo.git.diff("--name-only").splitlines()
+        dirty_files.update(unstaged_files)
+
+        return list(dirty_files)
 
     def is_dirty(self, path=None):
         if path and not self.path_in_repo(path):

@@ -1,4 +1,5 @@
 import colorsys
+import math
 import os
 import random
 import sys
@@ -7,7 +8,6 @@ from collections import Counter, defaultdict, namedtuple
 from importlib import resources
 from pathlib import Path
 
-import networkx as nx
 from diskcache import Cache
 from grep_ast import TreeContext, filename_to_lang
 from pygments.lexers import guess_lexer_for_filename
@@ -40,6 +40,8 @@ class RepoMap:
         io=None,
         repo_content_prefix=None,
         verbose=False,
+        max_context_window=None,
+        map_mul_no_files=8,
     ):
         self.io = io
         self.verbose = verbose
@@ -51,18 +53,40 @@ class RepoMap:
         self.load_tags_cache()
 
         self.max_map_tokens = map_tokens
+        self.map_mul_no_files = map_mul_no_files
+        self.max_context_window = max_context_window
 
         self.token_count = main_model.token_count
         self.repo_content_prefix = repo_content_prefix
 
-    def get_repo_map(self, chat_files, other_files):
+    def get_repo_map(self, chat_files, other_files, mentioned_fnames=None, mentioned_idents=None):
         if self.max_map_tokens <= 0:
             return
         if not other_files:
             return
+        if not mentioned_fnames:
+            mentioned_fnames = set()
+        if not mentioned_idents:
+            mentioned_idents = set()
+
+        max_map_tokens = self.max_map_tokens
+
+        # With no files in the chat, give a bigger view of the entire repo
+        padding = 4096
+        if max_map_tokens and self.max_context_window:
+            target = min(
+                max_map_tokens * self.map_mul_no_files,
+                self.max_context_window - padding,
+            )
+        else:
+            target = 0
+        if not chat_files and self.max_context_window and target > 0:
+            max_map_tokens = target
 
         try:
-            files_listing = self.get_ranked_tags_map(chat_files, other_files)
+            files_listing = self.get_ranked_tags_map(
+                chat_files, other_files, max_map_tokens, mentioned_fnames, mentioned_idents
+            )
         except RecursionError:
             self.io.tool_error("Disabling repo map, git repo too large?")
             self.max_map_tokens = 0
@@ -208,7 +232,9 @@ class RepoMap:
                 line=-1,
             )
 
-    def get_ranked_tags(self, chat_fnames, other_fnames):
+    def get_ranked_tags(self, chat_fnames, other_fnames, mentioned_fnames, mentioned_idents):
+        import networkx as nx
+
         defines = defaultdict(set)
         references = defaultdict(list)
         definitions = defaultdict(set)
@@ -219,6 +245,10 @@ class RepoMap:
         chat_rel_fnames = set()
 
         fnames = sorted(fnames)
+
+        # Default personalization for unspecified files is 1/num_nodes
+        # https://networkx.org/documentation/stable/_modules/networkx/algorithms/link_analysis/pagerank_alg.html#pagerank
+        personalize = 100 / len(fnames)
 
         if self.cache_missing:
             fnames = tqdm(fnames)
@@ -241,8 +271,11 @@ class RepoMap:
             rel_fname = self.get_rel_fname(fname)
 
             if fname in chat_fnames:
-                personalization[rel_fname] = 1.0
+                personalization[rel_fname] = personalize
                 chat_rel_fnames.add(rel_fname)
+
+            if rel_fname in mentioned_fnames:
+                personalization[rel_fname] = personalize
 
             tags = list(self.get_tags(fname, rel_fname))
             if tags is None:
@@ -260,6 +293,7 @@ class RepoMap:
         ##
         # dump(defines)
         # dump(references)
+        # dump(personalization)
 
         if not references:
             references = dict((k, list(v)) for k, v in defines.items())
@@ -270,11 +304,23 @@ class RepoMap:
 
         for ident in idents:
             definers = defines[ident]
+            if ident in mentioned_idents:
+                mul = 10
+            elif ident.startswith("_"):
+                mul = 0.1
+            else:
+                mul = 1
+
             for referencer, num_refs in Counter(references[ident]).items():
                 for definer in definers:
+                    # dump(referencer, definer, num_refs, mul)
                     # if referencer == definer:
                     #    continue
-                    G.add_edge(referencer, definer, weight=num_refs, ident=ident)
+
+                    # scale down so high freq (low value) mentions don't dominate
+                    num_refs = math.sqrt(num_refs)
+
+                    G.add_edge(referencer, definer, weight=mul * num_refs, ident=ident)
 
         if not references:
             pass
@@ -327,31 +373,88 @@ class RepoMap:
 
         return ranked_tags
 
-    def get_ranked_tags_map(self, chat_fnames, other_fnames=None):
+    def get_ranked_tags_map(
+        self,
+        chat_fnames,
+        other_fnames=None,
+        max_map_tokens=None,
+        mentioned_fnames=None,
+        mentioned_idents=None,
+    ):
         if not other_fnames:
             other_fnames = list()
+        if not max_map_tokens:
+            max_map_tokens = self.max_map_tokens
+        if not mentioned_fnames:
+            mentioned_fnames = set()
+        if not mentioned_idents:
+            mentioned_idents = set()
 
-        ranked_tags = self.get_ranked_tags(chat_fnames, other_fnames)
+        ranked_tags = self.get_ranked_tags(
+            chat_fnames, other_fnames, mentioned_fnames, mentioned_idents
+        )
+
         num_tags = len(ranked_tags)
-
         lower_bound = 0
         upper_bound = num_tags
         best_tree = None
+        best_tree_tokens = 0
 
         chat_rel_fnames = [self.get_rel_fname(fname) for fname in chat_fnames]
 
+        # Guess a small starting number to help with giant repos
+        middle = min(max_map_tokens // 25, num_tags)
+
+        self.tree_cache = dict()
+
         while lower_bound <= upper_bound:
-            middle = (lower_bound + upper_bound) // 2
             tree = self.to_tree(ranked_tags[:middle], chat_rel_fnames)
             num_tokens = self.token_count(tree)
 
-            if num_tokens < self.max_map_tokens:
+            if num_tokens < max_map_tokens and num_tokens > best_tree_tokens:
                 best_tree = tree
+                best_tree_tokens = num_tokens
+
+            if num_tokens < max_map_tokens:
                 lower_bound = middle + 1
             else:
                 upper_bound = middle - 1
 
+            middle = (lower_bound + upper_bound) // 2
+
         return best_tree
+
+    tree_cache = dict()
+
+    def render_tree(self, abs_fname, rel_fname, lois):
+        key = (rel_fname, tuple(sorted(lois)))
+
+        if key in self.tree_cache:
+            return self.tree_cache[key]
+
+        code = self.io.read_text(abs_fname) or ""
+        if not code.endswith("\n"):
+            code += "\n"
+
+        context = TreeContext(
+            rel_fname,
+            code,
+            color=False,
+            line_number=False,
+            child_context=False,
+            last_line=False,
+            margin=0,
+            mark_lois=False,
+            loi_pad=0,
+            # header_max=30,
+            show_top_of_file_parent_scope=False,
+        )
+
+        context.add_lines_of_interest(lois)
+        context.add_context()
+        res = context.format()
+        self.tree_cache[key] = res
+        return res
 
     def to_tree(self, tags, chat_rel_fnames):
         if not tags:
@@ -361,7 +464,8 @@ class RepoMap:
         tags = sorted(tags)
 
         cur_fname = None
-        context = None
+        cur_abs_fname = None
+        lois = None
         output = ""
 
         # add a bogus tag at the end so we trip the this_fname != cur_fname...
@@ -371,35 +475,23 @@ class RepoMap:
 
             # ... here ... to output the final real entry in the list
             if this_rel_fname != cur_fname:
-                if context:
-                    context.add_context()
+                if lois is not None:
                     output += "\n"
                     output += cur_fname + ":\n"
-                    output += context.format()
-                    context = None
+                    output += self.render_tree(cur_abs_fname, cur_fname, lois)
+                    lois = None
                 elif cur_fname:
                     output += "\n" + cur_fname + "\n"
-
                 if type(tag) is Tag:
-                    code = self.io.read_text(tag.fname) or ""
-
-                    context = TreeContext(
-                        tag.rel_fname,
-                        code,
-                        color=False,
-                        line_number=False,
-                        child_context=False,
-                        last_line=False,
-                        margin=0,
-                        mark_lois=False,
-                        loi_pad=0,
-                        # header_max=30,
-                        show_top_of_file_parent_scope=False,
-                    )
+                    lois = []
+                    cur_abs_fname = tag.fname
                 cur_fname = this_rel_fname
 
-            if context:
-                context.add_lines_of_interest([tag.line])
+            if lois is not None:
+                lois.append(tag.line)
+
+        # truncate long lines, in case we get minified js or something else crazy
+        output = "\n".join([line[:100] for line in output.splitlines()]) + "\n"
 
         return output
 
@@ -419,6 +511,22 @@ def get_random_color():
     hue = random.random()
     r, g, b = [int(x * 255) for x in colorsys.hsv_to_rgb(hue, 1, 0.75)]
     res = f"#{r:02x}{g:02x}{b:02x}"
+    return res
+
+
+def get_supported_languages_md():
+    from grep_ast.parsers import PARSERS
+
+    res = """
+| Language | File extension |
+|:--------:|:--------------:|
+"""
+    data = sorted((lang, ex) for ex, lang in PARSERS.items())
+    for lang, ext in data:
+        res += f"| {lang:20} | {ext:20} |\n"
+
+    res += "\n"
+
     return res
 
 
