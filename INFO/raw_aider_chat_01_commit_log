@@ -1,0 +1,84 @@
+POST /v1/chat/completions HTTP/1.1
+Host: api.openai.com
+Accept-Encoding: gzip, deflate
+Connection: keep-alive
+Accept: application/json
+Content-Type: application/json
+User-Agent: OpenAI/Python 1.57.0
+X-Stainless-Lang: python
+X-Stainless-Package-Version: 1.57.0
+X-Stainless-OS: Windows
+X-Stainless-Arch: other:amd64
+X-Stainless-Runtime: CPython
+X-Stainless-Runtime-Version: 3.11.2
+Authorization: Bearer sk-proj-XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX
+X-Stainless-Async: false
+X-Stainless-Raw-Response: true
+x-stainless-retry-count: 0
+Cookie: __cf_bm=eIv8RcbjvUmgSzDv2hgIvExCPjtyEShD4yT6Q4OgxWM-XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX
+Content-Length: 9682
+
+{"messages": [{"role": "system", "content": "You are an expert software engineer that generates concise, one-line Git commit messages based on the provided diffs.\nReview the provided context and diffs which are about to be committed to a git repo.\nReview the diffs carefully.\nGenerate a one-line commit message for those changes.\nThe commit message should be structured as follows: <type>: <description>\nUse these for <type>: fix, feat, build, chore, ci, docs, style, refactor, perf, test\n\nEnsure the commit message:\n- Starts with the appropriate prefix.\n- Is in the imperative mood (e.g., \"Add feature\" not \"Added feature\" or \"Adding feature\").\n- Does not exceed 72 characters.\n\nReply only with the one-line commit message, without any additional text, explanations, or line breaks.\n"}, {"role": "user", "content": "\nASSISTANT: Para mejorar el archivo `custom_gc_proxy\\gc_proxy.py`, podemos realizar las siguientes optimizaciones:\n\n1. **Organizar las importaciones**: Agrupar las importaciones est\u00e1ndar, de terceros y locales.\n2. **Eliminar c\u00f3digo comentado**: Remover l\u00edneas de c\u00f3digo que est\u00e1n comentadas y no se utilizan.\n3. **Manejo de excepciones**: Mejorar el manejo de excepciones para proporcionar mensajes de error m\u00e1s claros.\n4. **Uso de constantes**: Definir constantes para valores repetidos o configuraciones.\n5. **Refactorizar funciones**: Simplificar funciones largas o complejas.\n\nAqu\u00ed est\u00e1n los cambios propuestos:\n\ncustom_gc_proxy\\gc_proxy.py\n```python\n<<<<<<< SEARCH\nfrom flask import Flask, request, jsonify\nimport requests\nimport os\nimport sys\nimport litellm\n\nlitellm.set_verbose=True\n\nfrom colorama import Fore\n\nimport dotenv\n=======\nimport os\nimport sys\n\nfrom flask import Flask, request, jsonify\nimport requests\nimport dotenv\nimport litellm\nfrom colorama import Fore\n\nlitellm.set_verbose = True\n>>>>>>> REPLACE\n```\n\ncustom_gc_proxy\\gc_proxy.py\n```python\n<<<<<<< SEARCH\n#sys.path.append(r\"C:\\Users\\nacho\\dev\\other\\iavarios\\ipython-copilot-completer\")\n\n=======\n>>>>>>> REPLACE\n```\n\ncustom_gc_proxy\\gc_proxy.py\n```python\n<<<<<<< SEARCH\n    # here the github authentification\n    gh_token = os.environ.get(\"GITHUB_COPILOT_ACCESS_TOKEN\", None) \n=======\n    gh_token = os.environ.get(\"GITHUB_COPILOT_ACCESS_TOKEN\")\n>>>>>>> REPLACE\n```\n\ncustom_gc_proxy\\gc_proxy.py\n```python\n<<<<<<< SEARCH\n    #TODO /completion use \"prompt\"  as parameter with a string... not messages=[{role: \"user\", content: \"Help me\"}, ..., ]\n    #TODO BUT..... INFO/row_copilot_requests.txt shows that it uses messages=[{role: \"user\", content: \"Help me\"}, ..., ] and not prompt!!!!!\n\n    # Get from ipython-copilot-completer\n    url = \"https://copilot-proxy.githubusercontent.com/v1/engines/copilot-codex/completions\"\n    #url = \"https://api.githubcopilot.com/chat/completions\"\n    \n\n    import ipdb; ipdb.set_trace()\n=======\n    url = \"https://copilot-proxy.githubusercontent.com/v1/engines/copilot-codex/completions\"\n>>>>>>> REPLACE\n```\n\ncustom_gc_proxy\\gc_proxy.py\n```python\n<<<<<<< SEARCH\n    # Before making the request, validate required parameters\n    #required_params = ['model', 'prompt', 'max_tokens', 'temperature', 'top_p']\n=======\n>>>>>>> REPLACE\n```\n\ncustom_gc_proxy\\gc_proxy.py\n```python\n<<<<<<< SEARCH\n    ## Ensure 'prompt' is provided as a list with at least one non-empty string\n    #if not isinstance(kwargs['prompt'], list) or not all(isinstance(item, str) and item.strip() for item in kwargs['prompt']):\n    #    raise ValueError(\"The 'prompt' parameter must be a list of non-empty strings.\")\n\n=======\n>>>>>>> REPLACE\n```\n\ncustom_gc_proxy\\gc_proxy.py\n```python\n<<<<<<< SEARCH\n    # # After validation, proceed with the request as before\n    # resp = requests.post(\n    #     url,\n    #     json={\n    #         \"model\": kwargs['model'],\n    #         \"params\": {\n    #             \"prompt\": kwargs['prompt'],\n    #             \"max_tokens\": kwargs['max_tokens'],\n    #             \"temperature\": kwargs['temperature'],\n    #             \"top_p\": kwargs['top_p'],\n    #             \"top_k\": kwargs.get(\"top_k\", 40),\n    #         },\n    #     },\n    #     verify=False,\n    # )\n\n=======\n>>>>>>> REPLACE\n```\n\ncustom_gc_proxy\\gc_proxy.py\n```python\n<<<<<<< SEARCH\n    # headers = {\n    #     \"OpenAI-Intent\": \"conversation-panel\",\n    #     \"OpenAI-Organization\": \"github-copilot\",\n    #     ### Each call a new token? \n    #     \"Authorization\": f\"Bearer {get_copilot_token()}\",\n    #     \"Content-Type\": \"application/json\",\n    #     \"user-agent\": \"GitHubCopilotChat/0.15.1\",\n    #     \"editor-version\": \"vscode/1.89.1\",\n    #     \"editor-plugin-version\": \"copilot-chat/0.15.1\",\n    #     \"x-request-id\": \"b36f22a9-88f0-47fc-bfb8-47bc6273adf6\",\n    #     \"x-github-api-version\": \"2023-07-07\",\n    #     \"openai-organization\": \"github-copilot\",\n    #     \"copilot-integration-id\": \"vscode-chat\",\n    #     \"vscode-sessionid\": \"204ccf01-6c28-42b0-8c8f-2d453199af051715499526505\",\n    #     \"vscode-machineid\": \"ccc60edbc08ad1aac1be74576b329b10cdc2c094555f873711e3ca1a2e0f6afe\",\n    # }\n\n=======\n>>>>>>> REPLACE\n```\n\ncustom_gc_proxy\\gc_proxy.py\n```python\n<<<<<<< SEARCH\n    #messages = kwargs.get(\"messages\") + [{\"role\": \"user\", \"content\": \"Help me with what I've asked for.\"}]\n=======\n>>>>>>> REPLACE\n```\n\ncustom_gc_proxy\\gc_proxy.py\n```python\n<<<<<<< SEARCH\n    # payload = {\n    #     \"intent\": True,\n    #     \"max_tokens\": 250,\n    #     \"model\": MODEL,\n    #     \"n\": 1,\n    #     \"stream\": True,\n    #     \"temperature\": 0.1,\n    #     \"top_p\": 1,\n    #     \"messages\": messages \n    # }\n=======\n>>>>>>> REPLACE\n```\n\nEstos cambios mejoran la legibilidad y el mantenimiento del c\u00f3digo al eliminar comentarios innecesarios y organizar las importaciones. Adem\u00e1s, se mejora el manejo de excepciones y se asegura que las configuraciones se manejen de manera m\u00e1s clara.\n\nUSER: \n# Fix any errors below, if possible.\n\n## Running: C:\\Users\\nacho\\AppData\\Local\\Programs\\Python\\Python311\\python.exe -m flake8 --select=E9,F821,F823,F831,F406,F407,F701,F702,F704,F706 --show-source --isolated custom_gc_proxy\\gc_proxy.py\n\ncustom_gc_proxy\\gc_proxy.py:175:8: F821 undefined name 'resp'\n    if resp.status_code == 200:\n       ^\ncustom_gc_proxy\\gc_proxy.py:176:27: F821 undefined name 'resp'\n        custom_api_data = resp.json()\n                          ^\ncustom_gc_proxy\\gc_proxy.py:191:97: F821 undefined name 'resp'\n        return jsonify({'message': f'Error communicating with the custom API. \\n Response text:{resp.text}'}), resp.status_code\n                                                                                                ^\ncustom_gc_proxy\\gc_proxy.py:191:112: F821 undefined name 'resp'\n        return jsonify({'message': f'Error communicating with the custom API. \\n Response text:{resp.text}'}), resp.status_code\n                                                                                                               ^\n\n## See relevant lines below marked with \u2588.\n\ncustom_gc_proxy\\gc_proxy.py:\n...\u22ee...\n 86\u2502@app.route('/chat/completions', methods=['POST'])\n 87\u2502def completions():\n 88\u2502    url = \"https://copilot-proxy.githubusercontent.com/v1/engines/copilot-codex/completions\"\n...\u22ee...\n172\u2502    res = litellm.completion(**kwargs)\n173\u2502\n174\u2502    # Parse the response from the custom API\n175\u2588    if resp.status_code == 200:\n176\u2588        custom_api_data = resp.json()\n177\u2502\n178\u2502        # Prepare the response according to the given instructions\n179\u2502        response_data = {\n...\u22ee...\n188\u2502        }\n189\u2502        return jsonify(response_data), 200\n190\u2502    else:\n191\u2588        return jsonify({'message': f'Error communicating with the custom API. \\n Response text:{resp.text}'}), resp.status_code\n192\u2502\n193\u2502@app.route('/models', methods=['GET'])\n194\u2502def models():\n...\u22ee...\n\n\n\nASSISTANT: Para solucionar los errores de nombre indefinido en el archivo `custom_gc_proxy\\gc_proxy.py`, debemos asegurarnos de que la variable `resp` est\u00e9 definida antes de su uso. Parece que `resp` deber\u00eda ser el resultado de la llamada a `litellm.completion(**kwargs)`. Vamos a corregir esto:\n\ncustom_gc_proxy\\gc_proxy.py\n```python\n<<<<<<< SEARCH\n    res = litellm.completion(**kwargs)\n\n    # Parse the response from the custom API\n    if resp.status_code == 200:\n        custom_api_data = resp.json()\n=======\n    resp = litellm.completion(**kwargs)\n\n    # Parse the response from the custom API\n    if resp.status_code == 200:\n        custom_api_data = resp.json()\n>>>>>>> REPLACE\n```\n\nCon este cambio, `resp` ahora se define correctamente como el resultado de `litellm.completion(**kwargs)`, lo que deber\u00eda resolver los errores de nombre indefinido.\n\n# Diffs:\ndiff --git a/custom_gc_proxy/gc_proxy.py b/custom_gc_proxy/gc_proxy.py\nindex 227243523..8936c1b6f 100644\n--- a/custom_gc_proxy/gc_proxy.py\n+++ b/custom_gc_proxy/gc_proxy.py\n@@ -169,7 +169,7 @@ def completions():\n     print(\"litellm.completion()...\")\n \n     kwargs.update({\"messages\": messages})\n-    res = litellm.completion(**kwargs)\n+    resp = litellm.completion(**kwargs)\n \n     # Parse the response from the custom API\n     if resp.status_code == 200:"}], "model": "gpt-4o-mini", "stream": false, "temperature": 0}
+
+HTTP/1.1 200 OK
+Date: Tue, 21 Jan 2025 20:42:56 GMT
+Content-Type: application/json
+Transfer-Encoding: chunked
+Connection: keep-alive
+access-control-expose-headers: X-Request-ID
+openai-organization: nachouvefreelance
+openai-processing-ms: 571
+openai-version: 2020-10-01
+x-ratelimit-limit-requests: 10000
+x-ratelimit-limit-tokens: 200000
+x-ratelimit-remaining-requests: 9999
+x-ratelimit-remaining-tokens: 197735
+x-ratelimit-reset-requests: 8.64s
+x-ratelimit-reset-tokens: 679ms
+x-request-id: req_XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX
+strict-transport-security: max-age=31536000; includeSubDomains; preload
+CF-Cache-Status: DYNAMIC
+X-Content-Type-Options: nosniff
+Server: cloudflare
+CF-RAY: XXXXXXXXXXXXXXXXXXXX
+alt-svc: h3=":443"; ma=86400
+
+34d
+{
+  "id": "chatcmpl-AsFNI056TObYlAmPrNtIXnpxigTBV",
+  "object": "chat.completion",
+  "created": 1737492176,
+  "model": "gpt-4o-mini-2024-07-18",
+  "choices": [
+    {
+      "index": 0,
+      "message": {
+        "role": "assistant",
+        "content": "fix: Define 'resp' correctly to resolve undefined name errors",
+        "refusal": null
+      },
+      "logprobs": null,
+      "finish_reason": "stop"
+    }
+  ],
+  "usage": {
+    "prompt_tokens": 2326,
+    "completion_tokens": 13,
+    "total_tokens": 2339,
+    "prompt_tokens_details": {
+      "cached_tokens": 0,
+      "audio_tokens": 0
+    },
+    "completion_tokens_details": {
+      "reasoning_tokens": 0,
+      "audio_tokens": 0,
+      "accepted_prediction_tokens": 0,
+      "rejected_prediction_tokens": 0
+    }
+  },
+  "service_tier": "default",
+  "system_fingerprint": "fp_72ed7ab54c"
+}
+
+0
+
