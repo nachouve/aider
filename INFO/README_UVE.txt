@@ -95,3 +95,13 @@ Here is an example of what your `settings.json` file might look like after addin
 ```
 
 This configuration will route all HTTP and HTTPS traffic through the specified proxy server. The `http.proxyStrictSSL` setting is set to `false` to allow connections to servers with self-signed certificates.
+
+
+
+## AIDER with my custom gc_proxy
+
+Nacho !!! 
+try that:
+
+--openai-api-base VALUE
+Specify the api base url

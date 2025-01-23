@@ -87,7 +87,7 @@ def chat_completions():
 def completions():
     url = "https://copilot-proxy.githubusercontent.com/v1/engines/copilot-codex/completions"
     kwargs = request.json
-    required_params = ['model', 'max_tokens', 'temperature', 'top_p']
+    required_params = ['model', 'temperature']
     missing_params = [param for param in required_params if param not in kwargs]
     if missing_params:
         raise ValueError(f"Missing required parameters: {', '.join(missing_params)}")
@@ -98,14 +98,14 @@ def completions():
 
 
     # Ensure 'max_tokens', 'temperature', and 'top_p' are of correct type and within expected ranges
-    if not isinstance(kwargs['max_tokens'], int) or kwargs['max_tokens'] <= 0:
-        raise ValueError("The 'max_tokens' parameter must be a positive integer.")
+    # if not isinstance(kwargs['max_tokens'], int) or kwargs['max_tokens'] <= 0:
+    #     raise ValueError("The 'max_tokens' parameter must be a positive integer.")
 
-    if not isinstance(kwargs['temperature'], (int, float)) or not (0 <= kwargs['temperature'] <= 1):
-        raise ValueError("The 'temperature' parameter must be a number between 0 and 1.")
+    # if not isinstance(kwargs['temperature'], (int, float)) or not (0 <= kwargs['temperature'] <= 1):
+    #     raise ValueError("The 'temperature' parameter must be a number between 0 and 1.")
 
-    if not isinstance(kwargs['top_p'], (int, float)) or not (0 <= kwargs['top_p'] <= 1):
-        raise ValueError("The 'top_p' parameter must be a number between 0 and 1.")
+    # if not isinstance(kwargs['top_p'], (int, float)) or not (0 <= kwargs['top_p'] <= 1):
+    #     raise ValueError("The 'top_p' parameter must be a number between 0 and 1.")
 
 
     copilot_login()
@@ -122,9 +122,9 @@ def completions():
             'OpenAI-Organization': 'github-copilot',
             'Authorization': f"Bearer {COPILOT_TOKEN}",
             'Content-Type': 'application/json',
-            'user-agent': 'GitHubCopilotChat/0.15.1',
+            'user-agent': 'GitHubCopilotChat/0.23.2',
             'editor-version': 'vscode/1.89.1',
-            'editor-plugin-version': 'copilot-chat/0.15.1',
+            'editor-plugin-version': 'copilot-chat/0.23.2',
             #'x-request-id': 'b36f22a9-88f0-47fc-bfb8-47bc6273adf6',
             #'x-github-api-version': '2023-07-07',
             'openai-organization': 'github-copilot',
@@ -134,13 +134,13 @@ def completions():
         }
     
     ## I got that values inspecting traffic of vscode with mitmproxy
-    MODEL = "gpt-4"
+    MODEL = "gpt-4o"
     kwargs = {
             'custom_llm_provider': MODEL.split("/")[0], 
-            'model': MODEL,
+            'model': f'"{MODEL}"',
             'n': 1,
             'temperature': 0.1,
-            'max_tokens': 25,
+            'max_tokens': 1024, # 4096
             #'intent': True,
             'top_p': 1,
             #'base_url': 'https://api.githubcopilot.com/chat/completions',
@@ -149,7 +149,7 @@ def completions():
             'api_base': url,
             'headers': my_headers,
             # Added this stream: False
-            'stream': False,
+            'stream': "true",
         }
 
     ## Just and nice example
@@ -159,36 +159,120 @@ def completions():
                 "role": "system"
             },
             {
-                "content": "Help me ",
+                "content": "Tell me a 25 words joke of python programming",
                 "role": "user"
             },
         ]
 
     print(messages[-1])
-         
-    print("litellm.completion()...")
 
-    kwargs.update({"messages": messages})
-    resp = litellm.completion(**kwargs)
+    OLD = False
+    if OLD:
+        print("litellm.completion()...")
 
-    # Parse the response from the custom API
-    if resp.status_code == 200:
-        custom_api_data = resp.json()
+        # kwargs.update({"messages": messages})
+        # resp = litellm.completion(**kwargs)
 
-        # Prepare the response according to the given instructions
-        response_data = {
-            'data': [
+        # # Parse the response from the custom API
+        # if resp.status_code == 200:
+        #     custom_api_data = resp.json()
+
+        #     # Prepare the response according to the given instructions
+        #     response_data = {
+        #         'data': [
+        #             {
+        #                 'prompt': custom_api_data['data'][0]['prompt'],
+        #                 'output': custom_api_data['data'][0]['output'],
+        #                 'params': custom_api_data['data'][0]['params']
+        #             }
+        #         ],
+        #         'message': 'ok'
+        #     }
+        #     return jsonify(response_data), 200
+        # else:
+        #     return jsonify({'message': f'Error communicating with the custom API. \n Response text:{resp.text}'}), resp.status_code
+    else:
+        url = "https://api.individual.githubcopilot.com/chat/completions"
+        headers = {
+            'authorization': f"Bearer {COPILOT_TOKEN}",
+            'content-type': 'application/json',
+            'copilot-integration-id': 'vscode-chat',
+            'editor-plugin-version': 'copilot-chat/0.23.2',
+            'editor-version': 'vscode/1.96.4',
+            'openai-intent': 'conversation-panel',
+            'openai-organization': 'github-copilot',
+            'user-agent': 'GitHubCopilotChat/0.23.2',
+            #'vscode-machineid': '<REDACTED_MACHINE_ID>',
+            #'vscode-sessionid': '<REDACTED_SESSION_ID>',
+            'x-github-api-version': '2024-12-15',
+            #'x-request-id': '7162f088-6e73-46b9-9527-26ef612a1653',
+            'sec-fetch-site': 'none',
+            'sec-fetch-mode': 'no-cors',
+            'sec-fetch-dest': 'empty',
+            'accept-encoding': 'gzip, deflate, br, zstd',
+            'priority': 'u=4, i'
+        }
+
+        data = {
+            "messages": [
                 {
-                    'prompt': custom_api_data['data'][0]['prompt'],
-                    'output': custom_api_data['data'][0]['output'],
-                    'params': custom_api_data['data'][0]['params']
+                    "role": "system",
+                    "content": "You are an AI programming assistant.\nWhen asked for your name, you must respond with \"GitHub Copilot\".\nFollow the user's requirements carefully & to the letter.\nFollow Microsoft content policies.\nAvoid content that violates copyrights.\n"
+                },
+                {
+                    "role": "user",
+                    "content": "remove risky strings, personal passwords, etc."
+                },
+                {
+                    "role": "user",
+                    "content": "Tell me a 25 words joke of python programming"
                 }
             ],
-            'message': 'ok'
+            "model": "gpt-4o",
+            "temperature": 0.1,
+            "top_p": 1,
+            "max_tokens": 4096,
+            "n": 1,
+            "stream": True
         }
-        return jsonify(response_data), 200
-    else:
-        return jsonify({'message': f'Error communicating with the custom API. \n Response text:{resp.text}'}), resp.status_code
+
+        response = requests.post(url, headers=headers, json=data, verify=False)
+        print(response)
+
+        """
+        kk_lines = kk.split("\n")
+kk_lines
+for l in kk_lines:
+    print(l)
+l
+l[5:-1]
+l[6:-1]
+l[6:-1]
+import json
+l[6:-1]
+json.loads(l[6:-1])
+json.loads(l[6:])
+json.loads(l[6:]).get("choices")
+json.loads(l[6:]).get("choices").get("delta")
+json.loads(l[6:]).get("choices")[0].get("delta")
+json.loads(l[6:]).get("choices")[0].get("delta").get("content")
+for l in kk_lines:
+    l2 = json.loads(l[6:]).get("choices")[0].get("delta").get("content")
+for l in kk_lines:
+    try:
+        l2 = json.loads(l[6:]).get("choices")[0].get("delta").get("content")
+    except:
+        pass
+for l in kk_lines:
+    try:
+        l2 = json.loads(l[6:]).get("choices")[0].get("delta").get("content")
+        print(l2)
+    except:
+        pass
+        """
+
+        import ipdb; ipdb.set_trace()
+        return response.json()
 
 @app.route('/models', methods=['GET'])
 def models():
