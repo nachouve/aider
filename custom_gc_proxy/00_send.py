@@ -7,10 +7,11 @@ API_BASE = "http://127.0.0.1:5000"
 
 print(f"gc_proxy must be launched and listening over API_BASE: {API_BASE}")
 
-litellm.set_verbose=True
+#litellm.set_verbose=True
+os.environ['LITELLM_LOG'] = 'DEBUG'
 
 response = litellm.completion(
-    model="openai/mistral",               # add `openai/` prefix to model so litellm knows to route to OpenAI
+    model="custom/openai",               # add `openai/` prefix to model so litellm knows to route to OpenAI
     api_key="sk-1234",                  # api key to your openai compatible endpointº
     api_base=API_BASE,     # set API Base of your Custom OpenAI Endpoint
     messages=[

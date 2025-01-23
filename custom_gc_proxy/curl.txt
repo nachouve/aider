@@ -1,0 +1,1 @@
+ curl -X POST -N -H "Content-Type:application/json" -H "Accept:text/event-stream" http://localhost:5000/chat/completions --json "{\"model\": \"curl\", \"temperature\": 0.1}"

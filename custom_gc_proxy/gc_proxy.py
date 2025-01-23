@@ -213,7 +213,7 @@ def completions():
             'priority': 'u=4, i'
         }
 
-        data = {
+        test_data = {
             "messages": [
                 {
                     "role": "system",
@@ -236,43 +236,68 @@ def completions():
             "stream": True
         }
 
-        response = requests.post(url, headers=headers, json=data, verify=False)
-        print(response)
+        data = {
+            "messages": request.json.get("messages"),
+            "model": "gpt-4o",
+            "temperature": 0.1,
+            "top_p": 1,
+            "max_tokens": 4096,
+            "n": 1,
+            "stream": True
+        }
+        
+    import requests
+    from flask import Response, stream_with_context
+    response = requests.post(url, headers=headers, json=data, stream=True, verify=False)
 
-        """
-        kk_lines = kk.split("\n")
-kk_lines
-for l in kk_lines:
-    print(l)
-l
-l[5:-1]
-l[6:-1]
-l[6:-1]
-import json
-l[6:-1]
-json.loads(l[6:-1])
-json.loads(l[6:])
-json.loads(l[6:]).get("choices")
-json.loads(l[6:]).get("choices").get("delta")
-json.loads(l[6:]).get("choices")[0].get("delta")
-json.loads(l[6:]).get("choices")[0].get("delta").get("content")
-for l in kk_lines:
-    l2 = json.loads(l[6:]).get("choices")[0].get("delta").get("content")
-for l in kk_lines:
-    try:
-        l2 = json.loads(l[6:]).get("choices")[0].get("delta").get("content")
-    except:
-        pass
-for l in kk_lines:
-    try:
-        l2 = json.loads(l[6:]).get("choices")[0].get("delta").get("content")
-        print(l2)
-    except:
-        pass
-        """
+    uve_count = [0]
+    def generate():
+        for line in response.iter_lines():
+            if line:
+                uve_count[0] += 1
+                print(f"***************** uve_count: {uve_count[0]} *****************")
+                print_stream_response(line.decode('utf-8'))
+                print(f"***************** uve_count: {uve_count[0]} *****************")
+                yield f"{line.decode('utf-8')}\n\n"
 
-        import ipdb; ipdb.set_trace()
-        return response.json()
+    return Response(stream_with_context(generate()), mimetype='text/event-stream')
+
+def print_stream_response(response_text):
+    import json
+    kk_lines = response_text.split("\n")
+    for l in kk_lines:
+        #print(l)
+        pass
+    for l in kk_lines:
+        try:
+            l2 = json.loads(l[6:]).get("choices")[0].get("delta").get("content")
+            print(l2)
+        except:
+            pass
+
+@app.route('/models', methods=['GET'])
+def models():
+    return forward_request('/models', method='GET')
+
+@app.route('/embeddings', methods=['POST'])
+def embeddings():
+    return forward_request('/embeddings')
+
+if __name__ == "__main__":
+    app.run(debug=True)
+
+def print_stream_response(response):
+    import json
+    kk_lines = response.text.split("\n")
+    for l in kk_lines:
+        print(l)
+    for l in kk_lines:
+        try:
+            l2 = json.loads(l[6:]).get("choices")[0].get("delta").get("content")
+            print(l2)
+        except:
+            pass
+
 
 @app.route('/models', methods=['GET'])
 def models():
