@@ -152,23 +152,23 @@ def completions():
             'stream': "true",
         }
 
-    ## Just and nice example
-    messages = [ 
-            {
-                "content": "You are an AI programming assistant.\nWhen asked for your name, you must respond with \"GitHub Copilot\".\nFollow the user's requirements carefully & to the letter.\nFollow Microsoft content policies.\nAvoid content that violates copyrights.\nIf you are asked to generate content that is harmful, hateful, racist, sexist, lewd, violent, or completely irrelevant to software engineering, only respond with \"Sorry, I can't assist with that.\"\nKeep your answers short and impersonal.\nYou can answer general programming questions and perform the following tasks: \n* Ask a question about the files in your current workspace\n* Explain how the code in your active editor works\n* Review the selected code in your active editor\n* Generate unit tests for the selected code\n* Propose a fix for the problems in the selected code\n* Scaffold code for a new workspace\n* Create a new Jupyter Notebook\n* Find relevant code to your query\n* Propose a fix for the a test failure\n* Ask questions about VS Code\n* Generate query parameters for workspace search\n* Ask about VS Code extension development\n* Ask how to do something in the terminal\n* Explain what just happened in the terminal\nYou use the GPT-4 version of OpenAI's GPT models.\nFirst think step-by-step - describe your plan for what to build in pseudocode, written out in great detail.\nThen output the code in a single code block.\nMinimize any other prose.\nUse Markdown formatting in your answers.\nMake sure to include the programming language name at the start of the Markdown code blocks.\nAvoid wrapping the whole response in triple backticks.\nThe user works in an IDE called Visual Studio Code which has a concept for editors with open files, integrated unit test support, an output pane that shows the output of running the code as well as an integrated terminal.\nThe user is working on a Windows machine. Please respond with system specific commands if applicable.\nThe active document is the source code the user is looking at right now.\nYou can only give one reply for each conversation turn.\n",
-                "role": "system"
-            },
-            {
-                "content": "Tell me a 25 words joke of python programming",
-                "role": "user"
-            },
-        ]
-
-    print(messages[-1])
-
     OLD = False
     if OLD:
         print("litellm.completion()...")
+        ## Just and nice example
+        messages = [ 
+                {
+                    "content": "You are an AI programming assistant.\nWhen asked for your name, you must respond with \"GitHub Copilot\".\nFollow the user's requirements carefully & to the letter.\nFollow Microsoft content policies.\nAvoid content that violates copyrights.\nIf you are asked to generate content that is harmful, hateful, racist, sexist, lewd, violent, or completely irrelevant to software engineering, only respond with \"Sorry, I can't assist with that.\"\nKeep your answers short and impersonal.\nYou can answer general programming questions and perform the following tasks: \n* Ask a question about the files in your current workspace\n* Explain how the code in your active editor works\n* Review the selected code in your active editor\n* Generate unit tests for the selected code\n* Propose a fix for the problems in the selected code\n* Scaffold code for a new workspace\n* Create a new Jupyter Notebook\n* Find relevant code to your query\n* Propose a fix for the a test failure\n* Ask questions about VS Code\n* Generate query parameters for workspace search\n* Ask about VS Code extension development\n* Ask how to do something in the terminal\n* Explain what just happened in the terminal\nYou use the GPT-4 version of OpenAI's GPT models.\nFirst think step-by-step - describe your plan for what to build in pseudocode, written out in great detail.\nThen output the code in a single code block.\nMinimize any other prose.\nUse Markdown formatting in your answers.\nMake sure to include the programming language name at the start of the Markdown code blocks.\nAvoid wrapping the whole response in triple backticks.\nThe user works in an IDE called Visual Studio Code which has a concept for editors with open files, integrated unit test support, an output pane that shows the output of running the code as well as an integrated terminal.\nThe user is working on a Windows machine. Please respond with system specific commands if applicable.\nThe active document is the source code the user is looking at right now.\nYou can only give one reply for each conversation turn.\n",
+                    "role": "system"
+                },
+                {
+                    "content": "Tell me a 25 words joke of python programming",
+                    "role": "user"
+                },
+            ]
+
+        print(messages[-1])
+
 
         # kwargs.update({"messages": messages})
         # resp = litellm.completion(**kwargs)
@@ -245,18 +245,23 @@ def completions():
             "n": 1,
             "stream": True
         }
-        
+    from pprint import pprint 
+    
+    pprint(data)
+    
     import requests
     from flask import Response, stream_with_context
     response = requests.post(url, headers=headers, json=data, stream=True, verify=False)
+
+    print("Response received:", response.status_code)
 
     uve_count = [0]
     def generate():
         for line in response.iter_lines():
             if line:
                 uve_count[0] += 1
-                print(f"***************** uve_count: {uve_count[0]} *****************")
-                print_stream_response(line.decode('utf-8'))
+                print(f"***************** uve_count: {uve_count[0]} *****************")                
+                aux_text = print_stream_response(line.decode('utf-8'))
                 print(f"***************** uve_count: {uve_count[0]} *****************")
                 yield f"{line.decode('utf-8')}\n\n"
 
@@ -265,15 +270,18 @@ def completions():
 def print_stream_response(response_text):
     import json
     kk_lines = response_text.split("\n")
+    total_text = ""
     for l in kk_lines:
         #print(l)
         pass
     for l in kk_lines:
         try:
-            l2 = json.loads(l[6:]).get("choices")[0].get("delta").get("content")
-            print(l2)
+            curr_token = json.loads(l[6:]).get("choices")[0].get("delta").get("content")
+            print(curr_token)
+            total_text += curr_token
         except:
             pass
+    return total_text
 
 @app.route('/models', methods=['GET'])
 def models():

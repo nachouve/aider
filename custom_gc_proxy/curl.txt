@@ -1,2 +1,1 @@
-curl -X POST -N -H "Content-Type:application/json" -H "Accept:text/event-stream" -d "{\"model\": \"curl\", \"temperature\": 0.9, \"messages\": [{\"role\": \"user\", \"content\":
- \"Tell me a Python joke\"}]}" http://localhost:5000/chat/completions -s -w "\n"
+curl -X POST -N -H "Content-Type:application/json" -H "Accept:text/event-stream" -d "{\"model\": \"curl\", \"temperature\": 0.9, \"messages\": [{\"role\": \"user\", \"content\": \"Tell me a Python joke\"}]}" http://localhost:5000/chat/completions -s -w "\n"
