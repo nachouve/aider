@@ -100,8 +100,9 @@ This configuration will route all HTTP and HTTPS traffic through the specified p
 
 ## AIDER with my custom gc_proxy
 
-Nacho !!! 
-try that:
+aider --openai-api-base=http://127.0.0.1:4141 --show-prompts --chat-language=en
 
---openai-api-base VALUE
-Specify the api base url
+
+
+### 
+Today using that code return absurd messages... Hummm... I think there is something that not match!!

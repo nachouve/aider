@@ -6,7 +6,7 @@ from pprint import pprint
 
 colorama.init()
 
-API_URL = "http://localhost:5000/chat/completions"
+API_URL = "http://localhost:4141/chat/completions"
 DEBUG = False
 
 headers = {
@@ -16,18 +16,20 @@ headers = {
 
 data = {
     "model": "curl",
-    "temperature": 0.9,
+    "temperature": 0.1,
     "messages": [
         {
             "role": "user",
-            "content": "Tell me a joke with mixture Python programming and veganism"
+            "content": "Tell me a joke about Python programming and AI in 10 words."
         }
     ]
 }
 
 def process_sse_response(response):
     """
-    Process the SSE response and extract the content from choices[0].delta.content.
+    Process the SSE response and extract the content from:
+        - choices[0].delta.content, or
+        - choices[0].text
 
     Args:
         response (dict): The SSE response.
@@ -36,8 +38,15 @@ def process_sse_response(response):
         str: The extracted content.
     """
     try:
-        content = response.get("choices")[0].get("delta").get("content")
-        return content
+        choices = response.get("choices", [])
+        if not choices:
+            return None
+        delta = choices[0].get("delta", {})
+        if "content" in delta:
+            return delta["content"]
+        if "text" in choices[0]:
+            return choices[0]["text"]
+        return None
     except (AttributeError, IndexError, TypeError):
         return None
 

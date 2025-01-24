@@ -3,7 +3,7 @@ import os
 
 print("***** Let's start the gc_proxy test****")
 
-API_BASE = "http://127.0.0.1:5000"
+API_BASE = "http://127.0.0.1:4141"
 
 print(f"gc_proxy must be launched and listening over API_BASE: {API_BASE}")
 
