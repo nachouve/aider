@@ -106,3 +106,11 @@ aider --openai-api-base=http://127.0.0.1:4141 --show-prompts --chat-language=en
 
 ### 
 Today using that code return absurd messages... Hummm... I think there is something that not match!!
+
+
+
+
+
+### Run ollama in a docker
+
+docker run -d --gpus=all -v ollama:/root/.ollama -p 11434:11434 --name ollama ollama/ollama 
